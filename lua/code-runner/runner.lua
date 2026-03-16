@@ -1,0 +1,200 @@
+local terminal = require("code-runner.terminal")
+
+local M = {}
+
+local exe_ext = vim.fn.has("win32") == 1 and ".exe" or ""
+
+--- Escape Lua pattern metacharacters
+---@param s string
+---@return string
+local function pat_escape(s)
+  return (s:gsub("([%(%)%.%%%+%-%*%?%[%^%$])", "%%%1"))
+end
+
+--- Literal gsub replacement (escape % in replacement string)
+---@param s string
+---@param pattern string
+---@param repl string
+---@return string
+local function gsub_literal(s, pattern, repl)
+  return (s:gsub(pattern, repl:gsub("%%", "%%%%")))
+end
+
+--- Resolve CMake project root and build dir from current buffer
+---@return table|nil
+local function cmake_ctx()
+  local root = vim.fs.root(0, "CMakeLists.txt")
+  if not root then return nil end
+  return { root = root, build = root .. "/build" }
+end
+
+--- Expand placeholders in a command template
+---@param template string
+---@return string
+local function expand(template)
+  local file = vim.fn.shellescape(vim.fn.expand("%:."))
+  local name = vim.fn.shellescape(vim.fn.expand("%:t:r"))
+  local dir = vim.fn.shellescape(vim.fn.expand("%:.:h"))
+  local r = gsub_literal(template, "{file}", file)
+  r = gsub_literal(r, "{name}", name)
+  r = gsub_literal(r, "{dir}", dir)
+  return r
+end
+
+--- Convert src/ relative path to test/ relative path
+--- src/stl/unordered_map.cpp -> test/stl/unordered_map_test.cpp
+---@param rel string
+---@param config table
+---@return string
+local function src_to_test(rel, config)
+  local src_pat = "^" .. pat_escape(config.cpp.src_dir) .. "/"
+  return rel:gsub(src_pat, config.cpp.test_dir .. "/"):gsub("%.cpp$", "_test.cpp")
+end
+
+--- Check if string starts with prefix
+---@param s string
+---@param prefix string
+---@return boolean
+local function starts_with(s, prefix)
+  return s:sub(1, #prefix) == prefix
+end
+
+--- Derive a PascalCase test suite name from filename
+--- unordered_map -> UnorderedMap
+---@param name string
+---@return string
+local function to_test_suite(name)
+  return name:gsub("(%a)([%w]*)", function(first, rest)
+    return first:upper() .. rest
+  end):gsub("_", "")
+end
+
+--- Build and execute a cmake target
+---@param root string
+---@param build_dir string
+---@param target string
+---@param config table
+local function cmake_run(root, build_dir, target, config)
+  local q = vim.fn.shellescape
+  terminal.exec(
+    "cmake -B " .. q(build_dir) .. " -S " .. q(root)
+      .. " && cmake --build " .. q(build_dir) .. " --target " .. q(target)
+      .. " -j && " .. q(build_dir .. "/" .. target .. exe_ext),
+    config
+  )
+end
+
+--- Run a C++ file: CMake project or single-file fallback
+---@param config table
+local function run_cpp(config)
+  local ctx = cmake_ctx()
+
+  -- single-file fallback: no CMakeLists.txt
+  if not ctx then
+    terminal.exec(expand(config.cpp.single_file_cmd), config)
+    return
+  end
+
+  local exe_name = vim.fn.expand("%:t:r")
+  local rel = vim.fn.expand("%:.")
+  local target = exe_name
+  local src_prefix = config.cpp.src_dir .. "/"
+
+  -- if editing a src file and a corresponding test exists, run the test
+  if starts_with(rel, src_prefix) then
+    local test_file = src_to_test(rel, config)
+    if vim.fn.filereadable(ctx.root .. "/" .. test_file) == 1 then
+      target = exe_name .. "_test"
+    end
+  end
+
+  cmake_run(ctx.root, ctx.build, target, config)
+end
+
+--- :Run command handler
+---@param config table
+function M.run(config)
+  if vim.bo.buftype ~= "" then
+    vim.notify("Run: not a file buffer", vim.log.levels.WARN)
+    return
+  end
+
+  local ft = vim.bo.filetype
+
+  -- C++ has its own strategy
+  if ft == "cpp" then
+    run_cpp(config)
+    return
+  end
+
+  -- check filetype_cmds
+  local cmd_template = config.filetype_cmds[ft]
+  if cmd_template then
+    terminal.exec(expand(cmd_template), config)
+    return
+  end
+
+  vim.notify("Run: unsupported filetype: " .. ft, vim.log.levels.WARN)
+end
+
+--- :Test command handler (C++ only)
+---@param config table
+function M.test(config)
+  if vim.bo.filetype ~= "cpp" then
+    vim.notify("Test: only works for C++ files.", vim.log.levels.WARN)
+    return
+  end
+
+  local ctx = cmake_ctx()
+  if not ctx then
+    vim.notify("Test: CMakeLists.txt not found.", vim.log.levels.WARN)
+    return
+  end
+
+  local rel = vim.fn.expand("%:.")
+  local test_prefix = config.cpp.test_dir .. "/"
+  local src_prefix = config.cpp.src_dir .. "/"
+
+  -- already editing a test file -> just run it
+  if starts_with(rel, test_prefix) then
+    cmake_run(ctx.root, ctx.build, vim.fn.expand("%:t:r"), config)
+    return
+  end
+
+  if not starts_with(rel, src_prefix) then
+    vim.notify("Test: file must be under " .. config.cpp.src_dir .. "/ or " .. config.cpp.test_dir .. "/.", vim.log.levels.WARN)
+    return
+  end
+
+  local test_rel = src_to_test(rel, config)
+  local test_path = ctx.root .. "/" .. test_rel
+
+  -- test file exists -> open it
+  if vim.fn.filereadable(test_path) == 1 then
+    vim.cmd("edit " .. vim.fn.fnameescape(test_path))
+    return
+  end
+
+  -- scaffold new test file
+  local test_pat = "^" .. pat_escape(config.cpp.test_dir) .. "/"
+  local include_path = test_rel:gsub(test_pat, ""):gsub("_test%.cpp$", ".cpp")
+  local suite = to_test_suite(vim.fn.expand("%:t:r"))
+
+  local lines = {
+    '#include "' .. include_path .. '"  // NOLINT: include .cpp directly for testing',
+    "",
+    "#include <gtest/gtest.h>",
+    "",
+    "TEST(" .. suite .. "Test, BasicUsage) {",
+    "  // TODO: write test",
+    "  EXPECT_TRUE(true);",
+    "}",
+  }
+
+  vim.fn.mkdir(vim.fn.fnamemodify(test_path, ":h"), "p")
+  vim.cmd("edit " .. vim.fn.fnameescape(test_path))
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+  vim.cmd("write")
+end
+
+return M
