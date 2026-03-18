@@ -4,8 +4,12 @@ local terminal = require("code-runner.terminal")
 local M = {}
 
 M.defaults = {
-  use_terminal = true,
   term_height = 15,
+  run_scripts = { "run.sh" },
+  run_script_cmds = {
+    ["run.sh"] = "./run.sh",
+    ["Makefile"] = "make run",
+  },
   cpp = {
     single_file_cmd = "clang++ -std=c++23 -stdlib=libc++ -o /tmp/{name} {file} && /tmp/{name}",
     test_dir = "test",
@@ -26,10 +30,6 @@ function M.setup(opts)
 
   vim.api.nvim_create_user_command("Run", function() runner.run(M.config) end, {})
   vim.api.nvim_create_user_command("Test", function() runner.test(M.config) end, {})
-  vim.api.nvim_create_user_command("ToggleRunMode", function()
-    M.config.use_terminal = not M.config.use_terminal
-    vim.notify("Runner: " .. (M.config.use_terminal and "terminal" or "bang"))
-  end, {})
 
   local km = M.config.keymaps
   if km.toggle_term then

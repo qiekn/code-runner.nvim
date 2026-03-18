@@ -111,6 +111,26 @@ local function run_cpp(config)
   cmake_run(ctx.root, ctx.build, target, config)
 end
 
+--- Check for run_scripts in project root and return the command if found
+---@param config table
+---@return string|nil cmd
+local function detect_run_script(config)
+  if not config.run_scripts or #config.run_scripts == 0 then
+    return nil
+  end
+
+  local root = vim.fs.root(0, config.run_scripts)
+  if not root then return nil end
+
+  for _, script in ipairs(config.run_scripts) do
+    if vim.fn.filereadable(root .. "/" .. script) == 1 then
+      local cmd = (config.run_script_cmds or {})[script] or ("./" .. script)
+      return "cd " .. vim.fn.shellescape(root) .. " && " .. cmd
+    end
+  end
+  return nil
+end
+
 --- :Run command handler
 ---@param config table
 function M.run(config)
@@ -119,15 +139,22 @@ function M.run(config)
     return
   end
 
+  -- 1. run_scripts (highest priority)
+  local script_cmd = detect_run_script(config)
+  if script_cmd then
+    terminal.exec(script_cmd, config)
+    return
+  end
+
   local ft = vim.bo.filetype
 
-  -- C++ has its own strategy
+  -- 2. filetype special handling (cpp)
   if ft == "cpp" then
     run_cpp(config)
     return
   end
 
-  -- check filetype_cmds
+  -- 3. filetype_cmds
   local cmd_template = config.filetype_cmds[ft]
   if cmd_template then
     terminal.exec(expand(cmd_template), config)
