@@ -1,5 +1,7 @@
 # code-runner.nvim
 
+[CHANGELOG](CHANGELOG.md)
+
 A lightweight Neovim plugin for building and running C++ code in CMake projects. Built for my [cppp](https://github.com/qiekn/cppp) (C++ practice) repository where each `.cpp` under `src/` is a standalone executable and tests live in `test/`.
 
 Also supports single-file compilation (no CMake) and extensible `filetype_cmds` for other languages.
