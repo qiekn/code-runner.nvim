@@ -4,13 +4,14 @@
 
 A lightweight Neovim plugin for building and running C++ code in CMake projects. Built for my [cppp](https://github.com/qiekn/cppp) (C++ practice) repository where each `.cpp` under `src/` is a standalone executable and tests live in `test/`.
 
-Also supports single-file compilation (no CMake) and extensible `filetype_cmds` for other languages.
+Also supports single-file compilation (no CMake), Rust Cargo projects, and extensible `filetype_cmds` for other languages.
 
 ## Features
 
 - **CMake project**: auto-detect `CMakeLists.txt`, build with `cmake`, run targets
 - **Single file fallback**: no CMake? compile directly with configurable command
 - **Test integration**: `:Test` opens/scaffolds GoogleTest files, `:Run` prefers test if it exists
+- **Rust Cargo support**: infer `cargo run` targets from the current Rust file
 - **Multi-language**: extensible `filetype_cmds` for any language
 - **Toggle terminal**: persistent bottom split terminal
 
@@ -42,6 +43,7 @@ require("code-runner").setup({
   },
   filetype_cmds = {
     javascript = "node {file}",
+    -- rust = "cargo run --bin my-app",
     -- python = "python3 {file}",
     -- go = "go run {file}",
   },
@@ -79,6 +81,25 @@ require("code-runner").setup({
 2. **Single file** (no `CMakeLists.txt`):
    - Uses `cpp.single_file_cmd` with placeholder expansion
    - Default: `clang++ -std=c++23 -stdlib=libc++ -o /tmp/{name} {file} && /tmp/{name}`
+
+## Rust Run Strategy
+
+`:Run` on a Rust file follows this logic inside a Cargo project:
+
+1. If editing `src/bin/foo.rs` -> run `cargo run --bin foo`
+2. If editing `examples/bar.rs` -> run `cargo run --example bar`
+3. If the current file matches a `[[bin]]` entry with `path = "..."` in `Cargo.toml` -> run that bin target
+4. If `Cargo.toml` defines `default-run` -> run `cargo run --bin <default-run>`
+5. If editing `src/main.rs` and the package has a single implicit main target -> run `cargo run --bin <package-name>`
+6. Otherwise, fall back to `filetype_cmds.rust` if configured
+
+For multi-bin projects, setting `default-run` in `Cargo.toml` is recommended if you want `:Run` on `src/main.rs` to be deterministic.
+
+```toml
+[package]
+name = "hello"
+default-run = "hello"
+```
 
 ## Test Scaffolding
 
