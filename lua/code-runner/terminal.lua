@@ -1,8 +1,18 @@
 local M = {}
 
--- Persistent bottom terminal state (shared by toggle and exec)
+-- Persistent terminal state (shared by toggle and exec)
 local term_buf = nil
 local term_win = nil
+
+--- Build the :split / :vsplit command based on config.term_position
+---@param config table
+---@return string
+local function split_cmd(config)
+  if config.term_position == "right" then
+    return "botright " .. config.term_width .. "vsplit"
+  end
+  return "botright " .. config.term_height .. "split"
+end
 
 --- Close the current terminal buffer and its windows
 local function close_term()
@@ -16,11 +26,11 @@ local function close_term()
   term_win = nil
 end
 
---- Create a new bottom terminal running `cmd` (or a shell if nil)
+--- Create a new terminal running `cmd` (or a shell if nil)
 ---@param config table
 ---@param cmd string|nil
 local function create_term(config, cmd)
-  local term_cmd = "botright " .. config.term_height .. "split | term"
+  local term_cmd = split_cmd(config) .. " | term"
   if cmd then
     term_cmd = term_cmd .. " " .. cmd
   end
@@ -29,7 +39,7 @@ local function create_term(config, cmd)
   term_win = vim.api.nvim_get_current_win()
 end
 
---- Execute a shell command in the bottom terminal (closes old term, creates new)
+--- Execute a shell command in the terminal (closes old term, creates new)
 ---@param cmd string
 ---@param config table
 function M.exec(cmd, config)
@@ -37,7 +47,7 @@ function M.exec(cmd, config)
   create_term(config, cmd)
 end
 
---- Toggle a persistent bottom terminal
+--- Toggle the persistent terminal
 ---@param config table
 function M.toggle(config)
   -- terminal window is visible -> hide it
@@ -49,7 +59,7 @@ function M.toggle(config)
 
   -- buffer still alive -> re-show it
   if term_buf and vim.api.nvim_buf_is_valid(term_buf) then
-    vim.cmd("botright " .. config.term_height .. "split")
+    vim.cmd(split_cmd(config))
     term_win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(term_win, term_buf)
     vim.cmd("startinsert")

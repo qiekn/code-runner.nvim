@@ -34,8 +34,9 @@ All options with defaults:
 
 ```lua
 require("code-runner").setup({
-  use_terminal = true,       -- true: split terminal, false: :! mode
-  term_height = 15,
+  term_position = "bottom", -- "bottom" or "right"
+  term_height = 15,         -- used when term_position = "bottom"
+  term_width = 80,          -- used when term_position = "right"
   cpp = {
     single_file_cmd = "clang++ -std=c++23 -stdlib=libc++ -o /tmp/{name} {file} && /tmp/{name}",
     test_dir = "test",       -- test directory name
@@ -67,7 +68,7 @@ require("code-runner").setup({
 |---------|-------------|
 | `:Run` | Build and run current file. C++ uses CMake if available, otherwise single-file compile. Prefers test target if one exists. Other languages use `filetype_cmds`. |
 | `:Test` | C++ only. Opens matching test file, or scaffolds a new GoogleTest file. If already in a test file, builds and runs it. |
-| `:ToggleRunMode` | Switch between terminal and `:!` output mode. |
+| `:RunTogglePosition` | Toggle terminal position between bottom split and right vsplit at runtime. |
 
 ## C++ Run Strategy
 

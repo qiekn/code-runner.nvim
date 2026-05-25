@@ -4,7 +4,9 @@ local terminal = require("code-runner.terminal")
 local M = {}
 
 M.defaults = {
-  term_height = 15,
+  term_position = "bottom", -- "bottom" or "right"
+  term_height = 15, -- used when term_position = "bottom"
+  term_width = 80, -- used when term_position = "right"
   run_scripts = { "run.sh" },
   run_script_cmds = {
     ["run.sh"] = "./run.sh",
@@ -30,6 +32,10 @@ function M.setup(opts)
 
   vim.api.nvim_create_user_command("Run", function() runner.run(M.config) end, {})
   vim.api.nvim_create_user_command("Test", function() runner.test(M.config) end, {})
+  vim.api.nvim_create_user_command("RunTogglePosition", function()
+    M.config.term_position = M.config.term_position == "right" and "bottom" or "right"
+    vim.notify("code-runner: term_position = " .. M.config.term_position)
+  end, { desc = "Toggle code-runner terminal position (bottom <-> right)" })
 
   local km = M.config.keymaps
   if km.toggle_term then
